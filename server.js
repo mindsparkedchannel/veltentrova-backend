@@ -1,6 +1,8 @@
 import express from 'express';
 
 const app = express();
+// CORS erlauben (Netlify darf zugreifen)
+app.use((req,res,next)=>{ res.setHeader('Access-Control-Allow-Origin','*'); next(); });
 const PORT = process.env.PORT || 3000;
 
 // Config via ENV
@@ -21,6 +23,7 @@ function runTask() {
   if (usage.today > USAGE_CAP) usage.today = USAGE_CAP;
 }
 
+runTask(); // sofortiger erster Run beim Start
 setInterval(runTask, INTERVAL_MS);
 
 app.get('/status', (req, res) => res.json(status));
