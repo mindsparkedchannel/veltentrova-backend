@@ -143,6 +143,33 @@ app.get("/content", async (req, res) => {
 });
 
 // --- Start ---------------------------------------------------
+import fs from 'fs';
+import path from 'path';
+
+app.get('/content', (req, res) => {
+  try {
+    const filePath = path.join(process.cwd(), 'data', 'content.json');
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const json = JSON.parse(raw);
+      res.json(json);
+    } else {
+      res.json({
+        items: [
+          { title: 'Erster Post', category: 'blog', desc: 'Kurzer Blogbeitrag als Platzhalter.' },
+          { title: 'Produktkarte A', category: 'product', desc: 'Neue Produktidee – Auto-Generator' },
+          { title: 'Video-Snippet 01', category: 'video', desc: 'Kurzclip zu Prompt-Workflows' },
+          { title: 'Produktkarte B', category: 'product', desc: 'Landingpage-Generator' },
+          { title: 'How-To #1', category: 'blog', desc: 'Pipeline-Aufbau erklärt' }
+        ]
+      });
+    }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'content load failed' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`[Veltentrova] Backend listening on ${PORT} in ${MODE}`);
 });
