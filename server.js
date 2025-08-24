@@ -1,281 +1,78 @@
-// server.js — Veltentrova Backend (ESM, Node 18+)
-
-// -------------------------------
-// Imports & App-Setup (ESM)
-// -------------------------------
+// backend/server.js
 import express from "express";
 import cors from "cors";
-import fs from "fs";
-import path from "path";
+import { fetchTasks } from "./notion.js";
 
-// App initialisieren
-const app = express();
-app.use(cors());            // Erlaubt Aufrufe vom Netlify-Frontend
-app.use(express.json());    // JSON-Body-Parsing (falls später gebraucht)
-
-// -------------------------------
-// ENV-Konfiguration
-// -------------------------------
-const PORT = process.env.PORT || 10000;
-
-import express from 'express';
-import fetch from 'node-fetch';
-
-const PORT = process.env.PORT || 3000;
-const NOTION_API_KEY = process.env.NOTION_API_KEY;
-const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID;
-
-// ----------------------------
-// Helper-Funktion für Datum/Zeit hübsch
-// ----------------------------
-const fmtDE = (iso) => {
-  try {
-    return new Date(iso).toLocaleString('de-DE', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
-  } catch {
-    return iso || '';
-  }
-};
-
-// Anzeige/Status
-const MODE        = process.env.MODE        || "production";
-const INTERVAL_MS = Number(process.env.INTERVAL_MS || 300000); // 5 min
-const ADD_PER_RUN = Number(process.env.ADD_PER_RUN || 1200);
+const INTERVAL_MS = Number(process.env.INTERVAL_MS || 300000);
+const ADD_PER_RUN = Number(process.env.ADD_PER_RUN || 0);
 const USAGE_CAP   = Number(process.env.USAGE_CAP   || 200000);
+const MODE        = String(process.env.MODE        || "production");
+const PORT        = Number(process.env.PORT        || 3000);
+const TZ          = "Europe/Berlin";
 
-// Notion (optional – wenn gesetzt, liest /content aus deiner DB)
-const NOTION_API_KEY     = process.env.NOTION_API_KEY     || "";
-const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID || "";
-
-// -------------------------------
-// Laufzeit-Status im Speicher
-// -------------------------------
-let runs = 0;          // Wie oft der Scheduler gelaufen ist
-let lastRun = null;    // ISO-Zeitstempel des letzten Laufs
-let today = 0;         // "Verbrauch" für die Token-Anzeige
-
-// Hilfsfunktion
-const nowISO = () => new Date().toISOString();
-
-// -------------------------------
-// Notion: Tasks lesen (wenn konfiguriert)
-// -------------------------------
-async function fetchNotionTasks() {
-  // Wenn Notion nicht konfiguriert, direkt leer zurück
-  if (!NOTION_API_KEY || !NOTION_DATABASE_ID) return [];
-
-  const url = `https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query`;
-  const body = {
-    page_size: 50,
-    // Sortiere optional nach LastRun (falls vorhanden)
-    sorts: [{ property: "LastRun", direction: "descending" }],
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${NOTION_API_KEY}`,
-      "Notion-Version": "2022-06-28",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("[Notion] API error:", res.status, txt);
-    return [];
-  }
-
-  const data = await res.json();
-
-  // Mapping auf die einfache Card-Struktur des Frontends:
-  //  - title: Titel der Notion-Seite (Spaltenname kann "Task" ODER "Name" heißen)
-  //  - category: "task" (damit der Tasks-Filter funktioniert)
-  //  - desc: kompakter Text (Status • Priority • LastRun • Result)
-async function fetchNotionTasks() {
-  // Wenn Notion nicht konfiguriert, direkt leer zurück
-  if (!NOTION_API_KEY || !NOTION_DATABASE_ID) return [];
-
-  const url = `https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query`;
-  const body = {
-    page_size: 50,
-    // Sortiere optional nach LastRun (falls vorhanden)
-    sorts: [{ property: "LastRun", direction: "descending" }],
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${NOTION_API_KEY}`,
-      "Notion-Version": "2022-06-28",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("[Notion] API error:", res.status, txt);
-    return [];
-  }
-
-  const data = await res.json();
-
-  // >>> HIER ist der ersetzte Mapping-Block <<<
-  return (data.results || []).map((page) => {
-    const p = page.properties || {};
-
-    // Titel kann "Task" ODER "Name" heißen
-    const titleProp = p.Task?.title || p.Name?.title || [];
-    const title = titleProp.length
-      ? titleProp[0].plain_text || "Ohne Titel"
-      : "Ohne Titel";
-
-    const status   = p.Status?.select?.name   || "To Do";
-    const priority = p.Priority?.select?.name || "";
-    const lastRunP = p.LastRun?.date?.start   || null;
-    const result   = p.Result?.rich_text?.[0]?.plain_text || "";
-
-    const pieces = [
-      status,
-      priority && `Prio: ${priority}`,
-      lastRunP && `LastRun: ${fmtDE(lastRunP)}`,
-      result && `→ ${result}`,
-    ].filter(Boolean);
-
-    return { title, category: "task", desc: pieces.join(" • ") };
-  });
+function parts(d = new Date(), opts = {}){
+  return new Intl.DateTimeFormat("de-DE", { timeZone: TZ, ...opts })
+    .formatToParts(d)
+    .reduce((a,p)=> (a[p.type]=p.value, a), {});
+}
+function stamp(){
+  const p = parts(new Date(), { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false });
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
+function todayISO(){
+  const p = parts(new Date(), { year:"numeric", month:"2-digit", day:"2-digit" });
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
+let statusObj = { lastRun: "—", runs: 0, lastTask: { status: "—", result: { mode: MODE } } };
+let usageObj  = { today: 0, date: todayISO() };
+let cachedTasks = [];
 
-    const titleProp = p.Task?.title || p.Name?.title || [];
-    const title = titleProp.length
-      ? titleProp[0].plain_text || "Ohne Titel"
-      : "Ohne Titel";
-
-    const status = p.Status?.select?.name || "Todo";
-    const priority = p.Priority?.select?.name || "";
-    const lastRunP = p.LastRun?.date?.start || null;
-    const result = p.Result?.rich_text?.[0]?.plain_text || "";
-
-    const pieces = [
-      status,
-      priority && `Priority: ${priority}`,
-      lastRunP && new Date(lastRunP).toLocaleString("de-DE"),
-      result && `→ ${result}`,
-    ].filter(Boolean);
-
-    return { title, category: "task", desc: pieces.join(" • ") };
-  });
+function dailyReset(){
+  const t = todayISO();
+  if(usageObj.date !== t){ usageObj.today = 0; usageObj.date = t; }
 }
 
-// -------------------------------
-// Scheduler (Demo): zählt Runs & Tokenverbrauch
-// -------------------------------
-async function runTask() {
-  runs += 1;
-  lastRun = nowISO();
-  // Nur Anzeige: "Verbrauch" erhöhen, gedeckelt durch USAGE_CAP
-  today = Math.min(USAGE_CAP, today + ADD_PER_RUN);
-  // Hier könnten später echte Jobs passieren (Crawler, Sync, …)
-}
-
-// -------------------------------
-// API-Routen
-// -------------------------------
-
-// Root: kleiner Hinweis
-app.get("/", (req, res) => {
-  res.send("Veltentrova Backend läuft. Endpunkte: /status, /usage, /content");
-});
-
-// Systemstatus fürs Dashboard
-app.get("/status", (req, res) => {
-  res.json({
-    lastRun,
-    runs,
-    lastTask: {
-      status: "Done", // oder 'Doing' / 'Error' bei echten Jobs
-      result: { mode: MODE },
-    },
-  });
-});
-
-// Token-Usage fürs Dashboard
-app.get("/usage", (req, res) => {
-  res.json({
-    today,
-    cap: USAGE_CAP,
-    pct: Math.round((today / USAGE_CAP) * 100),
-  });
-});
-
-// Content-Karten:
-// 1) Notion (wenn konfiguriert)
-// 2) sonst data/content.json (falls vorhanden)
-// 3) sonst Fallback-Dummy-Items
-app.get("/content", async (req, res) => {
-  try {
-    // 1) Notion
-    const notionItems = await fetchNotionTasks();
-    if (notionItems.length) return res.json({ items: notionItems });
-
-    // 2) content.json aus dem Repo (backend/data/content.json)
-    const filePath = path.join(process.cwd(), "data", "content.json");
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const json = JSON.parse(raw);
-      return res.json(json);
-    }
-
-    // 3) Fallback
-    return res.json({
-      items: [
-        {
-          title: "Erster Post",
-          category: "blog",
-          desc: "Kurzer Blogbeitrag als Platzhalter.",
-        },
-        {
-          title: "Produktkarte A",
-          category: "product",
-          desc: "Neue Produktidee – Auto-Generator",
-        },
-        {
-          title: "Video-Snippet 01",
-          category: "video",
-          desc: "Kurzclip zu Prompt-Workflows",
-        },
-        {
-          title: "Produktkarte B",
-          category: "product",
-          desc: "Landingpage-Generator",
-        },
-        {
-          title: "How-To #1",
-          category: "blog",
-          desc: "Pipeline-Aufbau erklärt",
-        },
-      ],
-    });
-  } catch (e) {
-    console.error("[content] failed:", e);
-    res.status(500).json({ error: "content_failed" });
+async function performTask(){
+  try{
+    cachedTasks = await fetchTasks(100);
+    return true;
+  }catch(e){
+    console.error("[performTask]", e);
+    return false;
   }
+}
+
+async function runOnce(){
+  dailyReset();
+  if (ADD_PER_RUN){ usageObj.today = Math.max(0, Math.floor(usageObj.today + ADD_PER_RUN)); }
+  const ok = await performTask();
+  statusObj = { lastRun: stamp(), runs: (statusObj.runs||0)+1, lastTask: { status: ok ? "Done" : "Error", result: { mode: MODE } } };
+  console.log(`[run] ${statusObj.lastRun} -> ${statusObj.lastTask.status} | runs=${statusObj.runs} | today=${usageObj.today}`);
+}
+
+const app = express();
+app.disable("x-powered-by");
+app.use(cors());
+
+app.get("/health", (req,res)=> res.json({ ok: true, ts: stamp() }));
+app.get("/status", (req,res)=> res.json(statusObj));
+app.get("/usage",  (req,res)=> {
+  dailyReset();
+  const pct = Math.max(0, Math.min(100, Math.round((usageObj.today/USAGE_CAP)*100)));
+  res.json({ today: usageObj.today, date: usageObj.date, cap: USAGE_CAP, pct });
+});
+app.get("/content", (req,res)=> {
+  const items = cachedTasks.map(t => ({
+    title: t.title,
+    desc: `${t.status} • ${t.priority}`,
+    category: "task"
+  }));
+  res.json({ items });
 });
 
-// -------------------------------
-// Start & Scheduler
-// -------------------------------
-app.listen(PORT, () => {
-  console.log(`[Veltentrova] Backend listening on ${PORT} (MODE=${MODE})`);
+app.listen(PORT, ()=>{
+  console.log(`[server] listening on ${PORT} | interval=${INTERVAL_MS} add=${ADD_PER_RUN} cap=${USAGE_CAP} mode=${MODE}`);
+  runOnce().catch(console.error);
+  setInterval(()=> runOnce().catch(console.error), INTERVAL_MS);
 });
-
-// erster Lauf sofort, damit UI direkt Daten hat
-runTask();
-
-// zyklisch wiederholen
-setInterval(runTask, INTERVAL_MS);
