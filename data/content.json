@@ -1,0 +1,9 @@
+{
+  "items": [
+    { "title": "Daily Sync", "category": "task", "desc": "Status-Check • Priority: High" },
+    { "title": "Erster Post", "category": "blog", "desc": "Kurzer Blogbeitrag als Platzhalter." },
+    { "title": "Produktkarte A", "category": "product", "desc": "Neue Produktidee – Auto-Generator" },
+    { "title": "Video-Snippet 01", "category": "video", "desc": "Kurzclip zu Prompt-Workflows" },
+    { "title": "How-To #1", "category": "blog", "desc": "Pipeline-Aufbau erklärt" }
+  ]
+}
