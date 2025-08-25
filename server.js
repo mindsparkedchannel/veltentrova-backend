@@ -206,3 +206,50 @@ app.listen(PORT, () => {
   runOnce().catch(console.error);
   setInterval(() => runOnce().catch(console.error), INTERVAL_MS);
 });
+
+@'
+const express = require("express");
+const cors = require("cors");
+const { findLeadByEmail, createLead, getStatus, getUsage, getContent } = require("./notion");
+
+const app = express();
+app.use(express.json({ limit:"256kb" }));
+app.use(cors({ origin: true })); // reicht für uns
+
+app.get("/health", (_req,res)=> res.json({ ok:true, ts: new Date().toISOString().replace("T"," ").slice(0,19) }));
+app.get("/status",  async (_req,res)=> res.json(await getStatus()));
+app.get("/usage",   async (_req,res)=> res.json(await getUsage()));
+app.get("/content", async (_req,res)=> res.json(await getContent()));
+
+// Aliases
+app.get("/api/status",  async (_req,res)=> res.json(await getStatus()));
+app.get("/api/usage",   async (_req,res)=> res.json(await getUsage()));
+app.get("/api/content", async (_req,res)=> res.json(await getContent()));
+
+// Lead: GET Hinweis, POST anlegen
+app.get(['/lead','/api/lead'], (_req,res) => {
+  res.json({ ok:true, hint:'Use POST with JSON body {email,name,note,source}' });
+});
+
+function validEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s||""); }
+
+app.post(['/lead','/api/lead'], async (req,res) => {
+  try {
+    const { email, name, note, source } = req.body || {};
+    if (!validEmail(email) || !name) return res.status(400).json({ ok:false, error:"name/email required" });
+
+    const existing = await findLeadByEmail(email);
+    if (existing) return res.status(200).json({ ok:true, stored:"duplicate", id: existing.id });
+
+    const created = await createLead({ name, email, note, source });
+    return res.json({ ok:true, stored: "notion", id: created.id });
+  } catch (err) {
+    console.error("POST /lead error:", err);
+    return res.status(500).json({ ok:false, error: String(err.message||err) });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, ()=> console.log("Backend on :" + PORT));
+'@ | Set-Content -Encoding UTF8 "D:\Privat\AI\veltentrova-backend\server.js"
+
