@@ -15,4 +15,4 @@ jobs:
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           $u = "https://veltentrova-backend.onrender.com/refresh"
           $res = Invoke-RestMethod -Method Post -Uri $u -TimeoutSec 60
-          Write-Host "OK:" ($res | ConvertTo-Json -Depth 5)
+          $res | ConvertTo-Json -Depth 5 | Write-Host
