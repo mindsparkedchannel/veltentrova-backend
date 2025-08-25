@@ -56,3 +56,58 @@ app.get('/debug/smtp', async (req, res) => {
     res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 });
+// ==== DEBUG INJECT START ====
+(() => {
+  try {
+    if (typeof app === "undefined" || !app || typeof app.get !== "function") {
+      console.error("DEBUG: app not ready, skipping route injection");
+      return;
+    }
+    // lokaler Import – vermeidet globale Duplikate:
+    const { sendTestMail } = require("./notify");
+
+    app.get("/debug/routes", (req, res) => {
+      const routes = [];
+      const stack = (app._router && app._router.stack) || [];
+      for (const layer of stack) {
+        if (layer.route && layer.route.path) {
+          const methods = Object.keys(layer.route.methods || {});
+          routes.push({ path: layer.route.path, methods });
+        } else if (layer.name === "router" && layer.handle && layer.handle.stack) {
+          for (const s of layer.handle.stack) {
+            if (s.route && s.route.path) {
+              const methods = Object.keys(s.route.methods || {});
+              routes.push({ path: s.route.path, methods });
+            }
+          }
+        }
+      }
+      res.json({ ok: true, routes });
+    });
+
+    app.get("/debug/smtp", async (req, res) => {
+      try {
+        const out = await sendTestMail("SMTP debug", "If you see this, SMTP works.");
+        res.json({ ok: true, out });
+      } catch (e) {
+        console.error("MAIL/SMTP/ERR", e?.message || e);
+        res.status(500).json({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
+    app.get("/debug-smtp", async (req, res) => {
+      try {
+        const out = await sendTestMail("SMTP debug", "If you see this, SMTP works.");
+        res.json({ ok: true, out });
+      } catch (e) {
+        console.error("MAIL/SMTP/ERR", e?.message || e);
+        res.status(500).json({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
+    console.log("DEBUG: routes mounted (/debug/routes, /debug/smtp, /debug-smtp)");
+  } catch (err) {
+    console.error("DEBUG mount failed:", err?.message || err);
+  }
+})();
+// ==== DEBUG INJECT END ====
