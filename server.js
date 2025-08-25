@@ -1,6 +1,9 @@
 ﻿const express = require("express");
+const { sendTestMail } = require('./notify');
 const cors    = require("cors");
+const { sendTestMail } = require('./notify');
 const notion  = require("./notion.js");
+const { sendTestMail } = require('./notify');
 
 const app = express();
 app.use(express.json());
@@ -41,3 +44,15 @@ app.post(["/lead","/api/lead"], async (req,res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log("Backend listening on " + port));
+
+
+// ---- SMTP debug endpoint (added by PS) ----
+app.get('/debug/smtp', async (req, res) => {
+  try {
+    const out = await sendTestMail('SMTP debug', 'If you see this, SMTP works.');
+    res.json({ ok: true, out });
+  } catch (e) {
+    console.error('MAIL/SMTP/ERR', e?.message || e);
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
