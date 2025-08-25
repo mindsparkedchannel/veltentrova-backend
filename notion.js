@@ -47,3 +47,33 @@ async function getUsage()  { return {}; }
 async function getContent(){ return []; }
 
 module.exports = { createLead, getStatus, getUsage, getContent };
+/** --- PATCH: findLeadByEmail helper (Notion Email-Property) --- */
+async function findLeadByEmail(email) {
+  const token = process.env.NOTION_API_KEY;
+  const dbId  = process.env.NOTION_LEADS_DATABASE_ID;
+  if (!token || !dbId) throw new Error('NOTION vars missing');
+
+  const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      filter: {
+        property: 'Email',
+        email: { equals: email }           // Email-Property Filter
+      },
+      page_size: 1
+    })
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(`Notion query -> ${res.status}: ${JSON.stringify(json)}`);
+
+  return (json.results && json.results[0]) || null;
+}
+
+// ohne das bestehende module.exports zu verändern:
+try { module.exports.findLeadByEmail = findLeadByEmail; } catch {}
