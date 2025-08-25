@@ -1,0 +1,18 @@
+﻿name: Autopilot Refresh
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # alle 30 Minuten
+  workflow_dispatch: {}
+
+jobs:
+  ping-refresh:
+    runs-on: windows-latest
+    steps:
+      - name: Call /refresh
+        shell: pwsh
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $u = "https://veltentrova-backend.onrender.com/refresh"
+          $res = Invoke-RestMethod -Method Post -Uri $u -TimeoutSec 60
+          Write-Host "OK:" ($res | ConvertTo-Json -Depth 5)
