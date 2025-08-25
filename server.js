@@ -1,4 +1,9 @@
-﻿const express = require("express");
+# Pfad anpassen, falls nötig
+$repo = "D:\Privat\AI\veltentrova-backend"
+$server = Join-Path $repo "server.js"
+
+@'
+const express = require("express");
 const cors = require("cors");
 const { fetchTasks, createLead } = require("./notion");
 
@@ -46,7 +51,7 @@ async function runOnce(){
 const app = express();
 app.disable("x-powered-by");
 app.use(cors());
-app.use(express.json({ limit: "1mb" })); // <--- wichtig für /lead
+app.use(express.json({ limit: "1mb" })); // wichtig für POST /lead
 
 function usageResponse(){
   dailyReset();
@@ -78,8 +83,8 @@ app.get("/api/refresh", async (req,res)=>{
   catch (e) { res.status(500).json({ ok:false, error: e?.message || String(e) }); }
 });
 
-// LEADS
-app.post("/lead", async (req,res)=>{
+// ---------- LEADS ----------
+async function handleLead(req, res) {
   try{
     const { email, name, note, source } = req.body || {};
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ ok:false, error:"invalid_email" });
@@ -91,6 +96,14 @@ app.post("/lead", async (req,res)=>{
     console.error("[/lead]", e);
     res.status(500).json({ ok:false, error: e?.message || String(e) });
   }
+}
+
+// POST-Aliase, damit 404 ausgeschlossen ist
+app.post(["/lead", "/api/lead"], handleLead);
+
+// kleiner GET-Smoketest (zeigt nur Anleitung)
+app.get(["/lead", "/api/lead"], (req,res)=> {
+  res.json({ ok:true, hint:"Use POST with JSON body {email,name,note,source}" });
 });
 
 app.listen(PORT, ()=>{
@@ -98,3 +111,9 @@ app.listen(PORT, ()=>{
   runOnce().catch(console.error);
   setInterval(()=> runOnce().catch(console.error), INTERVAL_MS);
 });
+'@ | Set-Content -Encoding UTF8 $server
+
+cd $repo
+git add server.js
+git commit -m "feat: add /api/lead alias + GET hint for lead route"
+git push origin main
