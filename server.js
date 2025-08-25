@@ -1,10 +1,7 @@
-﻿const express = require("express");
-const { sendTestMail } = require('./notify');
+﻿const { sendTestMail } = require('./notify');
+const express = require("express");
 const cors    = require("cors");
-const { sendTestMail } = require('./notify');
 const notion  = require("./notion.js");
-const { sendTestMail } = require('./notify');
-
 const app = express();
 app.use(express.json());
 
@@ -64,9 +61,7 @@ app.get('/debug/smtp', async (req, res) => {
       return;
     }
     // lokaler Import – vermeidet globale Duplikate:
-    const { sendTestMail } = require("./notify");
-
-    app.get("/debug/routes", (req, res) => {
+app.get("/debug/routes", (req, res) => {
       const routes = [];
       const stack = (app._router && app._router.stack) || [];
       for (const layer of stack) {
@@ -111,3 +106,4 @@ app.get('/debug/smtp', async (req, res) => {
   }
 })();
 // ==== DEBUG INJECT END ====
+
