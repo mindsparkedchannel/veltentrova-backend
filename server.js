@@ -1,8 +1,8 @@
 ﻿const express = require("express");
 const cors = require("cors");
-const { fetchTasks } = require("./notion");
+const { fetchTasks, createLead } = require("./notion");
 
-const INTERVAL_MS = Number(process.env.INTERVAL_MS || 300000); // 5 min
+const INTERVAL_MS = Number(process.env.INTERVAL_MS || 300000); // 5 Min
 const ADD_PER_RUN = Number(process.env.ADD_PER_RUN || 0);
 const USAGE_CAP   = Number(process.env.USAGE_CAP   || 200000);
 const MODE        = String(process.env.MODE        || "production");
@@ -30,17 +30,10 @@ function dailyReset(){
   const t = todayISO();
   if(usageObj.date !== t){ usageObj.today = 0; usageObj.date = t; }
 }
-
 async function performTask(){
-  try{
-    cachedTasks = await fetchTasks(100);
-    return true;
-  }catch(e){
-    console.error("[performTask]", e);
-    return false;
-  }
+  try{ cachedTasks = await fetchTasks(100); return true; }
+  catch(e){ console.error("[performTask]", e); return false; }
 }
-
 async function runOnce(){
   dailyReset();
   if (ADD_PER_RUN){ usageObj.today = Math.max(0, Math.floor(usageObj.today + ADD_PER_RUN)); }
@@ -53,6 +46,7 @@ async function runOnce(){
 const app = express();
 app.disable("x-powered-by");
 app.use(cors());
+app.use(express.json({ limit: "1mb" })); // <--- wichtig für /lead
 
 function usageResponse(){
   dailyReset();
@@ -60,33 +54,43 @@ function usageResponse(){
   return { today: usageObj.today, date: usageObj.date, cap: USAGE_CAP, pct };
 }
 
-// --- legacy routes (bereits genutzt vom Frontend)
+// legacy
 app.get("/health", (req,res)=> res.json({ ok: true, ts: stamp() }));
 app.get("/status", (req,res)=> res.json(statusObj));
 app.get("/usage",  (req,res)=> res.json(usageResponse()));
 app.get("/content", (req,res)=> {
-  const items = (cachedTasks || []).map(t => ({
-    title: t.title, desc: `${t.status} • ${t.priority}`, category: "task"
-  }));
+  const items = (cachedTasks || []).map(t => ({ title: t.title, desc: `${t.status} • ${t.priority}`, category: "task" }));
   res.json({ items });
 });
 
-// --- neue Aliases unter /api/*
+// api aliases
 app.get("/api/status",  (req,res)=> res.json(statusObj));
 app.get("/api/usage",   (req,res)=> res.json(usageResponse()));
-app.get("/api/content", (req,res)=> res.json({ items: (cachedTasks || []).map(t => ({
-  title: t.title, desc: `${t.status} • ${t.priority}`, category: "task"
-}))}));
+app.get("/api/content", (req,res)=> res.json({ items: (cachedTasks || []).map(t => ({ title: t.title, desc: `${t.status} • ${t.priority}`, category: "task" })) }));
 
-// --- Refresh Trigger
+// refresh (POST + GET-Alias)
 app.post("/refresh", async (req,res)=>{
   try { const ok = await runOnce(); res.json({ ok, status: statusObj, usage: usageResponse() }); }
   catch (e) { res.status(500).json({ ok:false, error: e?.message || String(e) }); }
 });
-// optional GET-Variante, falls POST blockiert ist
 app.get("/api/refresh", async (req,res)=>{
   try { const ok = await runOnce(); res.json({ ok, status: statusObj, usage: usageResponse() }); }
   catch (e) { res.status(500).json({ ok:false, error: e?.message || String(e) }); }
+});
+
+// LEADS
+app.post("/lead", async (req,res)=>{
+  try{
+    const { email, name, note, source } = req.body || {};
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ ok:false, error:"invalid_email" });
+    if (!process.env.NOTION_LEADS_DATABASE_ID) return res.status(500).json({ ok:false, error:"NOTION_LEADS_DATABASE_ID missing" });
+
+    const r = await createLead({ email, name, note, source: source || "status-site" });
+    res.json({ ok:true, stored:"notion", id: r?.id || null });
+  }catch(e){
+    console.error("[/lead]", e);
+    res.status(500).json({ ok:false, error: e?.message || String(e) });
+  }
 });
 
 app.listen(PORT, ()=>{
