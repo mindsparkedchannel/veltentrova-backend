@@ -91,19 +91,108 @@ app.get("/api/refresh", async (req, res) => {
 });
 
 /* ---------- Leads ---------- */
-async function handleLead(req, res) {
+// ==== FLEXIBLES /lead ENDPOINT ===========================================
+const NOTION_KEY = process.env.NOTION_API_KEY;
+const LEADS_DB   = process.env.NOTION_LEADS_DATABASE_ID;
+
+const N_HEADERS = {
+  'Authorization': `Bearer ${NOTION_KEY}`,
+  'Notion-Version': '2022-06-28',
+  'Content-Type': 'application/json'
+};
+
+async function notion(path, options={}) {
+  const res = await fetch(`https://api.notion.com/v1${path}`, {
+    method: options.method || 'GET',
+    headers: { ...N_HEADERS, ...(options.headers||{}) },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const text = await res.text();
+  let json;
+  try { json = text ? JSON.parse(text) : {}; } catch { json = { raw:text }; }
+  if (!res.ok) {
+    const msg = typeof json === 'object' ? JSON.stringify(json) : String(json);
+    throw new Error(`Notion ${options.method||'GET'} ${path} -> ${res.status}: ${msg}`);
+  }
+  return json;
+}
+
+// Cache für Schema
+let LEAD_SCHEMA = null;
+async function getLeadSchema() {
+  if (LEAD_SCHEMA) return LEAD_SCHEMA;
+  if (!NOTION_KEY) throw new Error('NOTION_API_KEY missing');
+  if (!LEADS_DB)   throw new Error('NOTION_LEADS_DATABASE_ID missing');
+
+  const db = await notion(`/databases/${LEADS_DB}`);
+  const props = db.properties || {};
+
+  // Helper: ersten Key mit Typ finden
+  const keyByType = (type) => Object.keys(props).find(k => props[k]?.type === type);
+
+  const titleKey  = keyByType('title')   || 'Name';
+  const emailKey  = keyByType('email');                          // email bevorzugt
+  const noteKey   = keyByType('rich_text') || Object.keys(props).find(k => /note/i.test(k));
+  const sourceKey = Object.keys(props).find(k => /source/i.test(k)) || keyByType('rich_text');
+
+  // Status kann select ODER rich_text sein
+  let statusKey   = Object.keys(props).find(k => /status/i.test(k));
+  let statusType  = statusKey ? props[statusKey]?.type : null;
+  if (!statusKey) {
+    const sk = keyByType('select');
+    const rt = keyByType('rich_text');
+    statusKey  = sk || rt || null;
+    statusType = sk ? 'select' : (rt ? 'rich_text' : null);
+  }
+
+  LEAD_SCHEMA = { titleKey, emailKey, noteKey, sourceKey, statusKey, statusType };
+  return LEAD_SCHEMA;
+}
+
+app.get('/lead', (req,res) => {
+  res.json({ ok:true, hint:'Use POST with JSON body {email,name,note,source}' });
+});
+
+app.post('/lead', express.json(), async (req,res) => {
   try {
     const { email, name, note, source } = req.body || {};
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ ok: false, error: "invalid_email" });
-    if (!process.env.NOTION_LEADS_DATABASE_ID) return res.status(500).json({ ok: false, error: "NOTION_LEADS_DATABASE_ID missing" });
+    if (!email) return res.status(400).json({ ok:false, error:'email required' });
 
-    const r = await createLead({ email, name, note, source: source || "status-site" });
-    res.json({ ok: true, stored: "notion", id: r?.id || null });
-  } catch (e) {
-    console.error("[/lead]", e);
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
+    const s = await getLeadSchema();
+
+    // Properties zusammenbauen – nur Keys setzen, die es wirklich gibt
+    const properties = {};
+    if (s.titleKey && name) {
+      properties[s.titleKey] = { title: [{ text: { content: String(name) } }] };
+    }
+    if (s.emailKey) {
+      properties[s.emailKey] = { email: String(email) };
+    }
+    if (s.noteKey && note) {
+      properties[s.noteKey] = { rich_text: [{ text: { content: String(note) } }] };
+    }
+    if (s.sourceKey && source) {
+      properties[s.sourceKey] = { rich_text: [{ text: { content: String(source) } }] };
+    }
+    if (s.statusKey) {
+      properties[s.statusKey] =
+        (s.statusType === 'select')
+          ? { select: { name: 'New' } }
+          : { rich_text: [{ text: { content: 'New' } }] };
+    }
+
+    const created = await notion('/pages', {
+      method: 'POST',
+      body: { parent: { database_id: LEADS_DB }, properties }
+    });
+
+    res.json({ ok:true, stored:'notion', id: created.id });
+  } catch (err) {
+    console.error('POST /lead error:', err?.message || err);
+    res.status(500).json({ ok:false, error: String(err?.message || err) });
   }
-}
+});
+
 
 // POST-Aliase + GET-Hint
 app.post(["/lead", "/api/lead"], handleLead);
