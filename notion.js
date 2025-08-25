@@ -1,76 +1,77 @@
-﻿const NOTION_API_KEY = process.env.NOTION_API_KEY;
-const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID;          // Tasks DB (optional)
-const NOTION_LEADS_DATABASE_ID = process.env.NOTION_LEADS_DATABASE_ID;
-const NOTION_VERSION = process.env.NOTION_VERSION || "2022-06-28";
+@'
+const fetch = (...args) => import("node-fetch").then(({default: f}) => f(...args));
 
-// simple helper
-async function notion(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Authorization": `Bearer ${NOTION_API_KEY}`,
-      "Notion-Version": NOTION_VERSION,
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(()=>"");
-    throw new Error(`Notion ${method} ${url} -> ${res.status}: ${t}`);
-  }
-  return await res.json();
+const API_KEY = process.env.NOTION_API_KEY;
+const LEADS_DB = process.env.NOTION_LEADS_DATABASE_ID;
+
+const H = {
+  "Authorization": `Bearer ${API_KEY}`,
+  "Notion-Version": "2022-06-28",
+  "Content-Type": "application/json",
+};
+
+if (!API_KEY)  console.warn("[notion] NOTION_API_KEY fehlt!");
+if (!LEADS_DB) console.warn("[notion] NOTION_LEADS_DATABASE_ID fehlt!");
+
+async function notionPost(url, body) {
+  const r = await fetch(url, { method:"POST", headers:H, body: JSON.stringify(body||{}) });
+  if (!r.ok) throw new Error(`Notion ${url} -> ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+async function notionGet(url) {
+  const r = await fetch(url, { headers:H });
+  if (!r.ok) throw new Error(`Notion GET ${url} -> ${r.status}: ${await r.text()}`);
+  return r.json();
 }
 
-function textFromTitle(arr) {
-  if (!Array.isArray(arr)) return "";
-  return arr.map(x => x?.plain_text || x?.text?.content || "").join("").trim();
-}
-function readSelect(p, key, defVal) {
-  if (!p || !key) return defVal;
-  const prop = p[key];
-  if (!prop) return defVal;
-  if (prop.select?.name) return prop.select.name;
-  if (Array.isArray(prop.multi_select) && prop.multi_select[0]?.name) return prop.multi_select[0].name;
-  if (prop.rich_text?.[0]?.plain_text) return prop.rich_text[0].plain_text;
-  return defVal;
-}
-
-function mapTask(page) {
-  const props = page.properties || {};
-  const title = textFromTitle(props.Name?.title || props.Task?.title || []);
-  const status = readSelect(props, "Status", "Todo");
-  const priority = readSelect(props, "Priority", "Medium");
-  return {
-    id: page.id,
-    title: title || "Untitled",
-    status,
-    priority,
-    category: "task"
+async function findLeadByEmail(email) {
+  if (!LEADS_DB) throw new Error("NOTION_LEADS_DATABASE_ID missing");
+  const body = {
+    page_size: 1,
+    filter: { property: "Email", email: { equals: email } }
   };
-}
-
-async function fetchTasks(limit = 50) {
-  if (!NOTION_API_KEY || !NOTION_DATABASE_ID) return []; // optional
-  const url = `https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query`;
-  const data = await notion("POST", url, { page_size: Math.min(100, limit) });
-  return (data.results || []).map(mapTask);
-}
-
-async function createLead({ email, name, note, source }) {
-  if (!NOTION_API_KEY || !NOTION_LEADS_DATABASE_ID) {
-    throw new Error("Missing NOTION_API_KEY or NOTION_LEADS_DATABASE_ID");
+  const j = await notionPost(`https://api.notion.com/v1/databases/${LEADS_DB}/query`, body);
+  if (j.results && j.results.length) {
+    const p = j.results[0];
+    return { id: p.id };
   }
-  const payload = {
-    parent: { database_id: NOTION_LEADS_DATABASE_ID },
+  return null;
+}
+
+async function createLead({name, email, note, source}) {
+  if (!LEADS_DB) throw new Error("NOTION_LEADS_DATABASE_ID missing");
+  const body = {
+    parent: { database_id: LEADS_DB },
     properties: {
-      Name:   { title: [{ text: { content: String(name || email).slice(0, 200) } }] },
-      Email:  { email: email || "" },
-      Source: { rich_text: source ? [{ text: { content: String(source) } }] : [] },
-      Note:   { rich_text: note   ? [{ text: { content: String(note) } }]   : [] },
-      Status: { select: { name: "New" } }
+      Name:   { title:    [{ text: { content: name || "" } }] },
+      Email:  { email:    email || "" },
+      Note:   { rich_text:[{ text: { content: note || "" } }] },
+      Source: { rich_text:[{ text: { content: source || "" } }] },
+      Status: { select:   { name: "New" } }
     }
   };
-  return await notion("POST", "https://api.notion.com/v1/pages", payload);
+  const j = await notionPost("https://api.notion.com/v1/pages", body);
+  return { id: j.id };
 }
 
-module.exports = { fetchTasks, createLead };
+async function getStatus() {
+  return { lastRun: new Date().toISOString().replace('T',' ').slice(0,19), runs: 1, lastTask: { status:"Done", result:{mode:"production"} } };
+}
+async function getUsage() {
+  // Dummy — dein echter Zähler kann hier weiterhin angebunden bleiben
+  return { today: 1200, date: new Date().toISOString().slice(0,10), cap: 200000, pct: 1 };
+}
+async function getContent() {
+  return {
+    items: [
+      { title:"Token Budget Check", desc:"To Do • Medium", category:"task" },
+      { title:"Notion Sync Health", desc:"To Do • Medium", category:"task" },
+      { title:"Publish Status to Netlify", desc:"Done • Medium", category:"task" },
+      { title:"Daily Crawl & Summaries", desc:"Doing • Medium", category:"task" },
+      { title:"Initial Setup", desc:"Done • Medium", category:"task" }
+    ]
+  };
+}
+
+module.exports = { findLeadByEmail, createLead, getStatus, getUsage, getContent, notionGet, notionPost };
+'@ | Set-Content -Encoding UTF8 "D:\Privat\AI\veltentrova-backend\notion.js"
