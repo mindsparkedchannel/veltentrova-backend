@@ -9,7 +9,6 @@ const MODE        = String(process.env.MODE        || "production");
 const PORT        = Number(process.env.PORT        || 3000);
 const TZ          = "Europe/Berlin";
 
-// --- helpers (stamps/locale) ---
 function parts(d = new Date(), opts = {}){
   return new Intl.DateTimeFormat("de-DE", { timeZone: TZ, ...opts })
     .formatToParts(d).reduce((a,p)=> (a[p.type]=p.value, a), {});
@@ -23,7 +22,6 @@ function todayISO(){
   return `${p.year}-${p.month}-${p.day}`;
 }
 
-// --- in-memory state ---
 let statusObj = { lastRun: "—", runs: 0, lastTask: { status: "—", result: { mode: MODE } } };
 let usageObj  = { today: 0, date: todayISO() };
 let cachedTasks = [];
@@ -52,54 +50,43 @@ async function runOnce(){
   return ok;
 }
 
-// --- express app ---
 const app = express();
 app.disable("x-powered-by");
 app.use(cors());
 
-// compute usage response
 function usageResponse(){
   dailyReset();
   const pct = Math.max(0, Math.min(100, Math.round((usageObj.today/USAGE_CAP)*100)));
   return { today: usageObj.today, date: usageObj.date, cap: USAGE_CAP, pct };
 }
 
-// base routes (bestehend)
+// --- legacy routes (bereits genutzt vom Frontend)
 app.get("/health", (req,res)=> res.json({ ok: true, ts: stamp() }));
 app.get("/status", (req,res)=> res.json(statusObj));
 app.get("/usage",  (req,res)=> res.json(usageResponse()));
 app.get("/content", (req,res)=> {
   const items = (cachedTasks || []).map(t => ({
-    title: t.title,
-    desc: `${t.status} • ${t.priority}`,
-    category: "task"
+    title: t.title, desc: `${t.status} • ${t.priority}`, category: "task"
   }));
   res.json({ items });
 });
 
-// neue alias-routen unter /api/*
+// --- neue Aliases unter /api/*
 app.get("/api/status",  (req,res)=> res.json(statusObj));
 app.get("/api/usage",   (req,res)=> res.json(usageResponse()));
 app.get("/api/content", (req,res)=> res.json({ items: (cachedTasks || []).map(t => ({
   title: t.title, desc: `${t.status} • ${t.priority}`, category: "task"
 }))}));
 
-// refresh trigger (POST) + alias GET für einfaches Testen
+// --- Refresh Trigger
 app.post("/refresh", async (req,res)=>{
-  try {
-    const ok = await runOnce();
-    res.json({ ok, status: statusObj, usage: usageResponse() });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e?.message || String(e) });
-  }
+  try { const ok = await runOnce(); res.json({ ok, status: statusObj, usage: usageResponse() }); }
+  catch (e) { res.status(500).json({ ok:false, error: e?.message || String(e) }); }
 });
+// optional GET-Variante, falls POST blockiert ist
 app.get("/api/refresh", async (req,res)=>{
-  try {
-    const ok = await runOnce();
-    res.json({ ok, status: statusObj, usage: usageResponse() });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e?.message || String(e) });
-  }
+  try { const ok = await runOnce(); res.json({ ok, status: statusObj, usage: usageResponse() }); }
+  catch (e) { res.status(500).json({ ok:false, error: e?.message || String(e) }); }
 });
 
 app.listen(PORT, ()=>{
