@@ -2,7 +2,7 @@
 
 const express = require("express");
 const cors = require("cors");
-const notion = require("./notion"); // erwartet: module.exports = { createLead, ... }
+const notion = require("./notion"); // exportiert: createLead(...)
 
 const app  = express();
 const PORT = process.env.PORT || 10000;
@@ -65,7 +65,7 @@ app.post("/lead", async (req,res)=>{
     const { email, name, note, source } = req.body || {};
     if (!email) return res.status(400).json({ ok:false, error:"email required" });
 
-    const result = await notion.createLead({ email, name, note, source }); // Notion DB: Name (title), Email (email), Note (rich_text), Source (rich_text), Status (select: New)
+    const result = await notion.createLead({ email, name, note, source });
     res.json({ ok:true, stored:"notion", id: result.id, duplicate: !!result.duplicate });
   }catch(e){
     console.error("LEAD/ERR", e?.message || e);
@@ -73,14 +73,14 @@ app.post("/lead", async (req,res)=>{
   }
 });
 
-// ---- DIAG routes ----
+// ---- DIAG routes (vor etwaigen Catch-Alls einbinden!) ----
 function mask(v){ if(!v) return null; const s=String(v); return {len:s.length, head:s.slice(0,6), tail:s.slice(-4)}; }
 
 app.get("/diag/env", (req,res)=>{
   res.json({
     ok:true,
-    NOTION_API_KEY:              mask(process.env.NOTION_API_KEY),
-    NOTION_LEADS_DATABASE_ID:    mask(process.env.NOTION_LEADS_DATABASE_ID),
+    NOTION_API_KEY:           mask(process.env.NOTION_API_KEY),
+    NOTION_LEADS_DATABASE_ID: mask(process.env.NOTION_LEADS_DATABASE_ID),
     SMTP_HOST:  process.env.SMTP_HOST  || null,
     SMTP_PORT:  process.env.SMTP_PORT  || null,
     SMTP_USER:  process.env.SMTP_USER  || null,
