@@ -13,7 +13,7 @@ function smtpConfigFromEnv() {
   };
 }
 
-async function sendTestMail(subject = "SMTP debug", text = "If you see this, SMTP works.") {
+async function sendMail(subject, text) {
   const cfg = smtpConfigFromEnv();
   if (!cfg.host || !cfg.user || !cfg.pass) throw new Error("SMTP not configured");
 
@@ -27,8 +27,20 @@ async function sendTestMail(subject = "SMTP debug", text = "If you see this, SMT
     debug: true
   });
 
-  const info = await transporter.sendMail({ from: cfg.from, to: cfg.to, subject, text });
-  return { messageId: info.messageId, accepted: info.accepted, rejected: info.rejected, response: info.response, envelope: info.envelope };
+  const info = await transporter.sendMail({
+    from: cfg.from,
+    to:   cfg.to,
+    subject,
+    text
+  });
+
+  return {
+    messageId: info.messageId,
+    accepted:  info.accepted,
+    rejected:  info.rejected,
+    response:  info.response,
+    envelope:  info.envelope
+  };
 }
 
-module.exports = { sendTestMail };
+module.exports = { sendMail };

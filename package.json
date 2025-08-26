@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "veltentrova-backend",
   "version": "1.0.0",
   "private": true,
@@ -13,5 +13,6 @@
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "nodemailer": "^6.9.12"
-  }
+  },
+  "type": "commonjs"
 }
