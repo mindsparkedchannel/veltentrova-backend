@@ -6,6 +6,28 @@ const { createLead } = require("./notion");
 const allow = process.env.ALLOW_ORIGIN;
 if (allow) app.use(cors({ origin: allow }));
 app.use(express.json());
+/* --- DIAG ROUTES START --- */
+app.get('/diag/health', (req, res) => {
+  res.json({ ok: true, ts: new Date().toISOString(), uptime: process.uptime() });
+});
+
+app.get('/diag/env', (req, res) => {
+  const k = process.env.NOTION_API_KEY || '';
+  res.json({
+    ok: true,
+    which: 'NOTION_API_KEY',
+    NOTION_API_KEY: k ? { len: k.length, head: k.slice(0,8), tail: k.slice(-4) } : null,
+    NOTION_TOKEN: process.env.NOTION_TOKEN || null,
+    NOTION_SECRET: process.env.NOTION_SECRET || null,
+    NOTION_LEADS_DATABASE_ID: process.env.NOTION_LEADS_DATABASE_ID || null
+  });
+});
+
+// Safe Demo-Lead (keine externen Calls)
+app.get('/diag/lead', (req, res) => {
+  res.json({ ok: true, sample: { name: 'Test Lead', email: 'test@example.com' } });
+});
+/* --- DIAG ROUTES END --- */
 
 app.get("/health", (req,res)=>{
   const ts = new Date().toISOString().replace("T"," ").slice(0,19);
@@ -52,3 +74,4 @@ app.post(["/lead","/api/lead"], async (req,res)=>{
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, ()=> console.log("listening:", PORT));
+
