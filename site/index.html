@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>Veltentrova — Drops</title>
+<style>body{font-family:system-ui;background:#0b0d10;color:#e9eef3;margin:0}header{padding:16px 20px;border-bottom:1px solid #1d2735;background:#0f1318}h1{font-size:18px;margin:0}.wrap{max-width:900px;margin:0 auto;padding:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.card{background:#12161d;border:1px solid #233040;border-radius:12px;padding:14px}</style>
+<header><div class="wrap"><h1>Veltentrova — Latest Automated Drops</h1></div></header>
+<div class="wrap"><div id="grid" class="grid"></div></div>
+<script>(async()=>{try{const r=await fetch('/products/index.json?_='+Date.now());const items=await r.json();document.getElementById('grid').innerHTML=items.map(it=>`<div class="card"><div>${it.type||'Pack'}</div><h3>${it.title}</h3><p>${it.summary||''}</p>${it.url?'<a href="'+it.url+'" target="_blank">Open</a>':''}</div>`).join('')}catch(e){document.getElementById('grid').innerHTML='<div class="card">No products yet.</div>'}})();</script>
